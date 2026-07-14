@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oeds-scheduler-ui"
+version = "0.0.0"
+description = "Scheduler and admin UI add-on for Open Energy Data Server."
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "cron-converter",
+    "fastapi",
+    "jinja2",
+    "pandas",
+    "pyyaml",
+    "python-multipart",
+    "ruamel.yaml",
+    "sqlalchemy",
+    "uvicorn",
+]
+
+[project.scripts]
+oeds-scheduler = "oeds_scheduler_ui.cli:main"
+oeds-crawler-admin = "crawler_admin_server:main"
+
+[tool.setuptools]
+py-modules = ["crawler_admin_server"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+crawler_admin = ["templates/*.html", "static/*"]

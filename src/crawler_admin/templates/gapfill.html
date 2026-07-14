@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block title %}Gapfill Tests | OEDS Crawler Control{% endblock %}
+
+{% block content %}
+  <section class="crawler-header">
+    <div class="crawler-header__copy">
+      <div class="crawler-header__title">
+        <div>
+          <p class="eyebrow">Algorithm diagnostics</p>
+          <h2>Gapfill Tests</h2>
+        </div>
+        {% if latest_view %}
+          <span class="summary-pill summary-pill--{% if latest_view.all_passed %}success{% else %}error{% endif %}">
+            {{ latest_view.passed_count }} passed | {{ latest_view.failed_count }} failed
+          </span>
+        {% endif %}
+      </div>
+      <p class="crawler-header__meta">
+        Synthetic time-series faults are injected, processed by the gapfiller, and rendered from the resulting source and gapfilled series. These tests do not change crawler run settings.
+      </p>
+    </div>
+    <div class="crawler-header__actions">
+      <a href="/admin/editor" class="button button--secondary button--small">Edit YAML</a>
+    </div>
+  </section>
+
+  {% if message_text %}
+    <section class="flash flash--{{ message_kind or 'success' }}">
+      <strong>{{ message_text }}</strong>
+    </section>
+  {% endif %}
+
+  <section class="gapfill-shell">
+    <article class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Fault injection</p>
+          <h3>Self-test scenarios</h3>
+        </div>
+      </div>
+
+      <form method="post" action="/admin/gapfill/self-tests" class="gapfill-scenario-form">
+        <div class="gapfill-scenario-grid">
+          {% for item in catalog %}
+            <label class="gapfill-scenario">
+              <input
+                type="checkbox"
+                name="test_names"
+                value="{{ item.name }}"
+                {% if item.name in selected_names %}checked{% endif %}
+              />
+              <span class="gapfill-scenario__body">
+                <span class="gapfill-scenario__head">
+                  <strong>{{ item.name }}</strong>
+                  <span class="pill pill--ghost">{{ item.method }}</span>
+                </span>
+                <span class="gapfill-scenario__description">{{ item.description }}</span>
+                <span class="gapfill-scenario__meta">
+                  <span>{{ item.fault_type }}</span>
+                  <span>{{ item.source_rows }} source rows</span>
+                  <span>{{ item.expected_filled }} fills</span>
+                  <span>period {{ item.period_label }}</span>
+                </span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="action-row">
+          <button type="submit" class="button button--primary">Run selected self-tests</button>
+          <a href="/admin/gapfill" class="button button--secondary">Refresh view</a>
+        </div>
+      </form>
+    </article>
+
+    <aside class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Latest admin run</p>
+          <h3>Result summary</h3>
+        </div>
+      </div>
+
+      {% if latest_view %}
+        <dl class="detail-list detail-list--compact">
+          <div>
+            <dt>Run id</dt>
+            <dd><code>{{ latest_view.run_id }}</code></dd>
+          </div>
+          <div>
+            <dt>Checked at</dt>
+            <dd>{{ latest_view.checked_at }}</dd>
+          </div>
+          <div>
+            <dt>Series rows</dt>
+            <dd>{{ latest_view.series_rows }}</dd>
+          </div>
+        </dl>
+      {% else %}
+        <p class="empty-state">No gapfill self-test has been run in this admin session.</p>
+      {% endif %}
+    </aside>
+  </section>
+
+  <section class="gapfill-shell">
+    <article class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Holdout error test</p>
+          <h3>Remove data and measure error</h3>
+        </div>
+      </div>
+
+      <form method="post" action="/admin/gapfill/holdout-tests" class="gapfill-scenario-form">
+        <div class="studio-form-grid">
+          <label class="field-block">
+            <span class="field-label">Data</span>
+            <select name="dataset_name">
+              {% for item in holdout_catalog %}
+                <option value="{{ item.name }}" {% if holdout_values.dataset_name == item.name %}selected{% endif %}>
+                  {{ item.label }} ({{ item.row_count }} rows)
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field-block">
+            <span class="field-label">Method</span>
+            <select name="method">
+              {% for method in gapfill_methods %}
+                <option value="{{ method }}" {% if holdout_values.method == method %}selected{% endif %}>{{ method }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field-block">
+            <span class="field-label">Removed periods</span>
+            <input type="number" name="gap_length_periods" min="1" value="{{ holdout_values.gap_length_periods }}" />
+          </label>
+
+          <label class="field-block">
+            <span class="field-label">Start index</span>
+            <input type="number" name="gap_start_index" min="1" value="{{ holdout_values.gap_start_index }}" />
+          </label>
+
+          <label class="field-block">
+            <span class="field-label">Removal type</span>
+            <select name="fault_type">
+              <option value="value_gap" {% if holdout_values.fault_type == 'value_gap' %}selected{% endif %}>Value gap</option>
+              <option value="timestamp_gap" {% if holdout_values.fault_type == 'timestamp_gap' %}selected{% endif %}>Timestamp gap</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="gapfill-holdout-catalog">
+          {% for item in holdout_catalog %}
+            <div class="gapfill-holdout-catalog__item">
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.method }} | max {{ item.max_gap_length }} periods | default {{ item.recommended_gap_length }} at {{ item.recommended_gap_start }}</span>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="action-row">
+          <button type="submit" class="button button--primary">Run holdout error test</button>
+        </div>
+      </form>
+    </article>
+
+    <aside class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Latest holdout</p>
+          <h3>Error metrics</h3>
+        </div>
+      </div>
+
+      {% if latest_holdout_view %}
+        <dl class="detail-list detail-list--compact">
+          <div>
+            <dt>Dataset</dt>
+            <dd>{{ latest_holdout_view.result.dataset_label }}</dd>
+          </div>
+          <div>
+            <dt>Removed window</dt>
+            <dd>{{ latest_holdout_view.result.gap_start_time.strftime("%Y-%m-%d %H:%M UTC") }} to {{ latest_holdout_view.result.gap_end_time.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <span class="status-pill status-pill--{% if latest_holdout_view.passed %}succeeded{% else %}failed{% endif %}">
+                {{ latest_holdout_view.result.status }}
+              </span>
+            </dd>
+          </div>
+        </dl>
+        <div class="gapfill-error-grid">
+          {% for metric in latest_holdout_view.error_metrics %}
+            <div>
+              <span class="metric-label">{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">No holdout error test has been run in this admin session.</p>
+      {% endif %}
+    </aside>
+  </section>
+
+  {% if latest_holdout_view %}
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Holdout preview</p>
+          <h3>Truth, removed source, and filled output</h3>
+        </div>
+        <div class="gapfill-legend">
+          <span><i class="gapfill-legend__truth"></i> truth</span>
+          <span><i class="gapfill-legend__source"></i> source</span>
+          <span><i class="gapfill-legend__gapfilled"></i> gapfilled</span>
+          <span><i class="gapfill-legend__marker"></i> imputed</span>
+        </div>
+      </div>
+
+      <div class="gapfill-chart-grid">
+        {% for chart in latest_holdout_view.charts %}
+          <article class="gapfill-chart-card">
+            <div class="gapfill-chart-card__head">
+              <div>
+                <strong>{{ latest_holdout_view.result.dataset_label }}</strong>
+                <p>{{ latest_holdout_view.result.gap_length_periods }} removed periods | {{ chart.filled_count }} imputed points</p>
+              </div>
+              <dl class="gapfill-chart-card__range">
+                <div>
+                  <dt>Min</dt>
+                  <dd>{{ chart.y_min_label }}</dd>
+                </div>
+                <div>
+                  <dt>Max</dt>
+                  <dd>{{ chart.y_max_label }}</dd>
+                </div>
+              </dl>
+            </div>
+
+            {% if chart.has_data %}
+              <svg class="gapfill-chart" viewBox="0 0 100 42" preserveAspectRatio="none" role="img" aria-label="{{ chart.test_name }} truth source and gapfilled series">
+                <line x1="0" y1="38" x2="100" y2="38" class="gapfill-chart__axis" />
+                <line x1="0" y1="4" x2="100" y2="4" class="gapfill-chart__gridline" />
+                {% for points in chart.truth_segments %}
+                  <polyline points="{{ points }}" class="gapfill-chart__truth" />
+                {% endfor %}
+                {% for points in chart.source_segments %}
+                  <polyline points="{{ points }}" class="gapfill-chart__source" />
+                {% endfor %}
+                {% for points in chart.gapfilled_segments %}
+                  <polyline points="{{ points }}" class="gapfill-chart__gapfilled" />
+                {% endfor %}
+                {% for marker in chart.filled_markers %}
+                  <circle cx="{{ marker.cx }}" cy="{{ marker.cy }}" r="0.45" class="gapfill-chart__marker">
+                    <title>{{ marker.label }}</title>
+                  </circle>
+                {% endfor %}
+              </svg>
+              <div class="gapfill-chart-card__timeline">
+                <span>{{ chart.start_label }}</span>
+                <span>{{ chart.end_label }}</span>
+              </div>
+            {% else %}
+              <p class="empty-state">No finite values to render.</p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if latest_view %}
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Assertions</p>
+          <h3>Self-test report</h3>
+        </div>
+      </div>
+
+      <div class="history-table-wrapper">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Status</th>
+              <th>Fault</th>
+              <th>Method</th>
+              <th>Filled</th>
+              <th>Missing after</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for result in latest_view.results %}
+              <tr>
+                <td><strong>{{ result.test_name }}</strong></td>
+                <td>
+                  <span class="status-pill status-pill--{% if result.status == 'passed' %}succeeded{% else %}failed{% endif %}">
+                    {{ result.status }}
+                  </span>
+                </td>
+                <td>{{ result.fault_type }}</td>
+                <td><code>{{ result.method }}</code></td>
+                <td>{{ result.actual_filled }} / {{ result.expected_filled }}</td>
+                <td>{{ result.missing_after }}</td>
+                <td>{{ result.message or "OK" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Series preview</p>
+          <h3>Injected gaps and filled output</h3>
+        </div>
+        <div class="gapfill-legend">
+          <span><i class="gapfill-legend__source"></i> source</span>
+          <span><i class="gapfill-legend__gapfilled"></i> gapfilled</span>
+          <span><i class="gapfill-legend__marker"></i> imputed</span>
+        </div>
+      </div>
+
+      <div class="gapfill-chart-grid">
+        {% for chart in latest_view.charts %}
+          <article class="gapfill-chart-card">
+            <div class="gapfill-chart-card__head">
+              <div>
+                <strong>{{ chart.test_name }}</strong>
+                <p>{{ chart.filled_count }} imputed points</p>
+              </div>
+              <dl class="gapfill-chart-card__range">
+                <div>
+                  <dt>Min</dt>
+                  <dd>{{ chart.y_min_label }}</dd>
+                </div>
+                <div>
+                  <dt>Max</dt>
+                  <dd>{{ chart.y_max_label }}</dd>
+                </div>
+              </dl>
+            </div>
+
+            {% if chart.has_data %}
+              <svg class="gapfill-chart" viewBox="0 0 100 42" preserveAspectRatio="none" role="img" aria-label="{{ chart.test_name }} source and gapfilled series">
+                <line x1="0" y1="38" x2="100" y2="38" class="gapfill-chart__axis" />
+                <line x1="0" y1="4" x2="100" y2="4" class="gapfill-chart__gridline" />
+                {% for points in chart.truth_segments %}
+                  <polyline points="{{ points }}" class="gapfill-chart__truth" />
+                {% endfor %}
+                {% for points in chart.source_segments %}
+                  <polyline points="{{ points }}" class="gapfill-chart__source" />
+                {% endfor %}
+                {% for points in chart.gapfilled_segments %}
+                  <polyline points="{{ points }}" class="gapfill-chart__gapfilled" />
+                {% endfor %}
+                {% for marker in chart.filled_markers %}
+                  <circle cx="{{ marker.cx }}" cy="{{ marker.cy }}" r="0.45" class="gapfill-chart__marker">
+                    <title>{{ marker.label }}</title>
+                  </circle>
+                {% endfor %}
+              </svg>
+              <div class="gapfill-chart-card__timeline">
+                <span>{{ chart.start_label }}</span>
+                <span>{{ chart.end_label }}</span>
+              </div>
+            {% else %}
+              <p class="empty-state">No finite values to render.</p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

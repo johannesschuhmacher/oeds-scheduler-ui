@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}YAML Editor | OEDS Crawler Control{% endblock %}
+
+{% block content %}
+  <section class="hero-card hero-card--compact">
+    <div class="hero-copy">
+      <p class="eyebrow">Raw configuration</p>
+      <h2>Edit <code>{{ config_path.name }}</code> with validation and conflict detection</h2>
+      <p>Last modified {{ config_mtime }} | preview times use {{ time_label }}</p>
+    </div>
+    <div class="hero-actions">
+      <span class="summary-pill summary-pill--{% if validation.has_errors %}error{% elif validation.warning_count %}warning{% else %}success{% endif %}">
+        {{ validation.error_count }} errors | {{ validation.warning_count }} warnings
+      </span>
+    </div>
+  </section>
+
+  {% if message_text %}
+    <section class="flash flash--{{ message_kind or 'info' }}">
+      <strong>{{ message_text }}</strong>
+    </section>
+  {% endif %}
+
+  <section class="editor-layout">
+    <article class="panel panel--editor">
+      <div class="panel-heading">
+        <h3>CRAWLER_CONFIG.yml</h3>
+      </div>
+
+      <form method="post" action="/admin/editor" class="editor-form">
+        <input type="hidden" name="base_hash" value="{{ base_hash }}" />
+        <label class="sr-only" for="yaml_content">YAML content</label>
+        <textarea id="yaml_content" name="yaml_content" spellcheck="false">{{ yaml_text }}</textarea>
+        <div class="editor-actions">
+          <button type="submit" name="action" value="validate" class="button button--secondary">Validate</button>
+          <button type="submit" name="action" value="save" class="button button--primary">Save file</button>
+        </div>
+      </form>
+    </article>
+
+    <aside class="sidebar-stack">
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Validation report</h3>
+        </div>
+        {% if validation.issues %}
+          <ul class="issue-list">
+            {% for issue in validation.issues %}
+              <li class="issue issue--{{ issue.level }}">
+                <span class="issue-badge">{{ issue.badge_label }}</span>
+                <div>
+                  <strong>
+                    {% if issue.scope != 'global' %}
+                      {{ issue.scope }}:
+                    {% endif %}
+                    {{ issue.message }}
+                  </strong>
+                  {% if issue.location %}
+                    <p>{{ issue.location }}</p>
+                  {% endif %}
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-state">No validation issues.</p>
+        {% endif %}
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>CRON playground</h3>
+        </div>
+        <label for="cron_input" class="field-label">Schedule expression</label>
+        <input id="cron_input" type="text" value="{{ schedule_samples[0] if schedule_samples else '0 4 * * *' }}" />
+        <div class="sample-row">
+          {% for sample in schedule_samples %}
+            <button type="button" class="sample-chip" data-schedule="{{ sample }}">{{ sample }}</button>
+          {% endfor %}
+        </div>
+        <div id="cron_preview" class="cron-preview">
+          <p class="empty-state">Enter a CRON schedule to preview the next runs.</p>
+        </div>
+      </article>
+    </aside>
+  </section>
+
+  <script>
+    const cronInput = document.getElementById("cron_input");
+    const cronPreview = document.getElementById("cron_preview");
+    const sampleButtons = document.querySelectorAll(".sample-chip");
+
+    async function updateCronPreview() {
+      const schedule = cronInput.value.trim();
+      if (!schedule) {
+        cronPreview.innerHTML = '<p class="empty-state">Enter a CRON schedule to preview the next runs.</p>';
+        return;
+      }
+
+      cronPreview.innerHTML = '<p class="empty-state">Loading preview...</p>';
+
+      const response = await fetch(`/admin/api/cron-preview?schedule=${encodeURIComponent(schedule)}`);
+      const payload = await response.json();
+
+      if (payload.error) {
+        cronPreview.innerHTML = `
+          <p class="inline-error">${payload.error}</p>
+        `;
+        return;
+      }
+
+      const runs = payload.next_runs
+        .map((run) => `<li>${run} ${payload.time_label}</li>`)
+        .join("");
+
+      cronPreview.innerHTML = `
+        <p class="cron-summary">${payload.summary}</p>
+        <ul class="run-list">${runs}</ul>
+      `;
+    }
+
+    cronInput.addEventListener("input", () => {
+      window.clearTimeout(window.__cronPreviewTimer);
+      window.__cronPreviewTimer = window.setTimeout(updateCronPreview, 180);
+    });
+
+    sampleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        cronInput.value = button.dataset.schedule;
+        updateCronPreview();
+      });
+    });
+
+    updateCronPreview();
+  </script>
+{% endblock %}

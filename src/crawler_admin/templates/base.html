@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}OEDS Crawler Control{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('admin_static', path='admin.css') }}" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block brand-block--compact">
+          <span class="brand-mark">OEDS</span>
+          <span class="brand-submark">Crawler Control</span>
+        </div>
+        <nav class="topnav" aria-label="Primary">
+          <a href="/admin" class="{% if page_name == 'dashboard' %}is-active{% endif %}">Dashboard</a>
+          <a href="/admin/gapfill" class="{% if page_name == 'gapfill' %}is-active{% endif %}">Gapfill Tests</a>
+          <a href="/admin/editor" class="{% if page_name == 'editor' %}is-active{% endif %}">YAML Editor</a>
+        </nav>
+      </header>
+
+      <main class="page-shell">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

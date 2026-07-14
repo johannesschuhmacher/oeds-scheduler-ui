@@ -1,0 +1,1057 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | OEDS Crawler Control{% endblock %}
+
+{% block content %}
+  <section class="dashboard-head dashboard-head--compact">
+    <div class="dashboard-head__copy">
+      <p class="eyebrow">OEDS Operations</p>
+      <h2>Crawler Control</h2>
+      <div class="dashboard-head__meta">
+        <span>Source <code>{{ state.config_path.name }}</code></span>
+        <span>{{ state.server_time }} {{ state.time_label }}</span>
+        <span>Updated {{ state.config_mtime }}</span>
+      </div>
+    </div>
+    <div class="stat-strip" aria-label="Dashboard summary">
+      <article class="stat-tile">
+        <span class="stat-label">Crawlers</span>
+        <strong>{{ state.available_count }}</strong>
+      </article>
+      <article class="stat-tile">
+        <span class="stat-label">Configured</span>
+        <strong>{{ state.configured_count }}</strong>
+      </article>
+      <article class="stat-tile">
+        <span class="stat-label">Enabled</span>
+        <strong>{{ state.enabled_count }}</strong>
+      </article>
+      <article class="stat-tile">
+        <span class="stat-label">Validation</span>
+        <strong>{{ state.validation.error_count }} / {{ state.validation.warning_count }}</strong>
+      </article>
+    </div>
+  </section>
+
+  {% if message_text %}
+    <section class="flash flash--{{ message_kind or 'info' }}">
+      <strong>{{ message_text }}</strong>
+    </section>
+  {% endif %}
+
+  {% if state.global_issues %}
+    <section class="notice-bar notice-bar--warning">
+      <div class="notice-bar__copy">
+        <strong>{{ state.global_issues|length }} configuration issue{% if state.global_issues|length != 1 %}s{% endif %}</strong>
+        <span>{{ state.global_issues[0].message }}</span>
+      </div>
+      <a href="/admin/editor" class="button button--secondary button--small">Open YAML Editor</a>
+    </section>
+  {% endif %}
+
+  <section class="fleet-toolbar" aria-label="Crawler filters">
+    <div class="fleet-toolbar__search">
+      <label class="sr-only" for="crawler-search">Search crawlers</label>
+      <input
+        id="crawler-search"
+        type="search"
+        class="js-fleet-search"
+        placeholder="Search crawler or schema"
+        autocomplete="off"
+      />
+    </div>
+    <div class="fleet-toolbar__filters" role="group" aria-label="Quick filters">
+      <button type="button" class="filter-chip is-active js-fleet-filter" data-filter="all">All</button>
+      <button type="button" class="filter-chip js-fleet-filter" data-filter="enabled">Enabled</button>
+      <button type="button" class="filter-chip js-fleet-filter" data-filter="disabled">Disabled</button>
+      <button type="button" class="filter-chip js-fleet-filter" data-filter="running">Running</button>
+      <button type="button" class="filter-chip js-fleet-filter" data-filter="issues">Issues</button>
+    </div>
+  </section>
+
+  <section class="fleet-accordion" aria-label="Crawler overview">
+    <p class="fleet-empty-state is-hidden js-fleet-empty">No crawlers match the current filters.</p>
+
+    {% for row in crawler_rows %}
+      {% set card = row.card %}
+      {% set latest_run = row.latest_run %}
+      {% set active_run = row.active_run %}
+      {% set has_inline_issue = card.issues or row.email_state.filter_state == "incomplete" %}
+      {% set has_description = card.description and card.description != "Crawler module available without dedicated description." %}
+      <details
+        id="crawler-{{ card.name }}"
+        class="fleet-row fleet-row--{{ card.state_variant }} {% if row.is_selected %}is-selected{% endif %} {% if row.is_expanded %}is-expanded{% endif %}"
+        data-crawler-name="{{ card.name }}"
+        data-filter-text="{{ (card.name ~ ' ' ~ (card.schema_name or '') ~ ' ' ~ card.description)|lower }}"
+        data-is-enabled="{% if card.enabled is sameas true %}true{% else %}false{% endif %}"
+        data-is-disabled="{% if card.enabled is sameas false %}true{% else %}false{% endif %}"
+        data-is-running="{% if active_run %}true{% else %}false{% endif %}"
+        data-has-issues="{% if has_inline_issue %}true{% else %}false{% endif %}"
+        {% if row.is_expanded %}open{% endif %}
+        {% if active_run %}data-active-run-id="{{ active_run.run_id }}"{% endif %}
+      >
+        <summary class="fleet-summary">
+          <div class="fleet-summary__main">
+            <span
+              class="fleet-toggle"
+              aria-hidden="true"
+            >
+              <span class="fleet-toggle__chevron" aria-hidden="true"></span>
+              <span class="fleet-toggle__label">{% if row.is_expanded %}Hide{% else %}Show{% endif %}</span>
+            </span>
+            <div class="fleet-summary__identity">
+              <h3>{{ card.name }}</h3>
+              <p class="fleet-summary__meta">
+                {% if card.schema_name %}
+                  schema {{ card.schema_name }}
+                {% elif card.configured %}
+                  schema not set
+                {% else %}
+                  no YAML section
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <div class="fleet-summary__item fleet-summary__item--schedule">
+            <span class="fleet-summary__label">Next schedule</span>
+            {% if card.preview.error %}
+              <strong class="inline-error">{{ card.preview.error }}</strong>
+            {% elif card.preview.next_runs %}
+              <strong>{{ card.preview.next_runs[0] }} {{ state.time_label }}</strong>
+              <span class="subtle-note">{{ card.preview.summary }}</span>
+            {% elif card.schedule %}
+              <strong>No preview available</strong>
+              <span class="subtle-note"><code>{{ card.schedule }}</code></span>
+            {% else %}
+              <strong>Not scheduled</strong>
+              <span class="subtle-note">No effective schedule</span>
+            {% endif %}
+          </div>
+
+          <div class="fleet-summary__item fleet-summary__item--run js-run-state">
+            <span class="fleet-summary__label">Run</span>
+            {% if active_run %}
+              <span class="status-pill status-pill--running">{{ active_run.action_label }} running</span>
+              <span class="subtle-note">Started {{ active_run.created_at | replace('T', ' ') | truncate(16, True, '') }}</span>
+            {% elif latest_run %}
+              <span class="status-pill status-pill--{{ latest_run.status }}">{{ latest_run.status }}</span>
+              <span class="subtle-note">{{ latest_run.action_label }} at {{ latest_run.created_at | replace('T', ' ') | truncate(16, True, '') }}</span>
+            {% else %}
+              <strong>Idle</strong>
+              <span class="subtle-note">No manual runs yet.</span>
+            {% endif %}
+          </div>
+
+          <div class="fleet-summary__side">
+            <div class="fleet-summary__item fleet-summary__item--state">
+              <span class="fleet-summary__label">Status</span>
+              <div class="fleet-status js-status-wrap">
+                <span class="summary-pill summary-pill--{{ card.state_variant }}">{{ card.state_label }}</span>
+                {% if row.is_locked %}
+                  <span class="pill pill--warning js-lock-pill">locked</span>
+                {% endif %}
+                {% if has_inline_issue %}
+                  <span class="issue-badge">Issue</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="fleet-summary__actions action-row">
+              {% if row.can_start %}
+                <a href="/admin?confirm_run={{ card.name }}#run-confirm-modal" class="button button--primary button--small js-run-once-link js-summary-action">
+                  Run Once
+                </a>
+              {% endif %}
+              <a href="/admin/crawlers/{{ card.name }}" class="button button--secondary button--small js-summary-action">
+                Settings
+              </a>
+            </div>
+          </div>
+        </summary>
+
+        <div
+          id="crawler-panel-{{ card.name }}"
+          class="fleet-row__details"
+        >
+          <div class="fleet-detail-band">
+            <section class="fleet-detail-section fleet-detail-section--lead">
+              <span class="fleet-summary__label">Summary</span>
+              {% if has_description %}
+                <p class="fleet-detail-section__lead">{{ card.description }}</p>
+              {% else %}
+                <p class="fleet-detail-section__lead">Reduced operational summary for {{ card.name }}.</p>
+              {% endif %}
+
+              <div class="fleet-detail-metrics">
+                <div>
+                  <dt>Current rule</dt>
+                  <dd>{{ card.preview.summary }}</dd>
+                </div>
+                <div>
+                  <dt>CRON</dt>
+                  <dd>{% if card.schedule %}<code>{{ card.schedule }}</code>{% else %}-{% endif %}</dd>
+                </div>
+                <div>
+                  <dt>Next runs</dt>
+                  <dd>
+                    {% if card.preview.next_runs %}
+                      <ul class="run-list run-list--compact">
+                        {% for run in card.preview.next_runs %}
+                          <li>{{ run }} {{ state.time_label }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% elif card.preview.error %}
+                      <span class="inline-error">{{ card.preview.error }}</span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </dd>
+                </div>
+              </div>
+            </section>
+
+            <section class="fleet-detail-section">
+              <span class="fleet-summary__label">Activity &amp; Config</span>
+              <div class="fleet-overview-card__state">
+                <span class="status-pill status-pill--{% if active_run %}running{% elif latest_run %}{{ latest_run.status }}{% else %}idle{% endif %} js-activity-state">
+                  {% if active_run %}
+                    {{ active_run.action_label }} running
+                  {% elif latest_run %}
+                    {{ latest_run.status }}
+                  {% else %}
+                    idle
+                  {% endif %}
+                </span>
+              </div>
+              <p class="subtle-note js-activity-note">
+                {% if active_run %}
+                  Started {{ active_run.created_at | replace('T', ' ') | truncate(16, True, '') }}
+                {% elif latest_run %}
+                  {{ latest_run.action_label }} at {{ latest_run.created_at | replace('T', ' ') | truncate(16, True, '') }}
+                {% else %}
+                  No manual runs recorded yet.
+                {% endif %}
+              </p>
+              <div class="fleet-detail-metrics fleet-detail-metrics--compact">
+                <div>
+                  <dt>Schema</dt>
+                  <dd>{{ card.schema_name or "-" }}</dd>
+                </div>
+                <div>
+                  <dt>Module</dt>
+                  <dd>{% if card.module_present %}present{% else %}missing{% endif %}</dd>
+                </div>
+                <div>
+                  <dt>Source</dt>
+                  <dd>{{ card.schedule_source or "unset" }}</dd>
+                </div>
+                <div>
+                  <dt>Post-run scripts</dt>
+                  <dd>{{ row.post_run_script_count }}</dd>
+                </div>
+                <div>
+                  <dt>Lock</dt>
+                  <dd>{% if row.is_locked %}active{% else %}free{% endif %}</dd>
+                </div>
+                <div>
+                  <dt>YAML</dt>
+                  <dd>{% if card.configured %}configured{% else %}missing{% endif %}</dd>
+                </div>
+              </div>
+            </section>
+
+            <section class="fleet-detail-section fleet-detail-section--actions">
+              <span class="fleet-summary__label">Actions</span>
+              {% if card.issues %}
+                <ul class="issue-list issue-list--compact">
+                  {% for issue in card.issues[:2] %}
+                    <li class="issue issue--{{ issue.level }}">
+                      <span class="issue-badge">{{ issue.level }}</span>
+                      <div><strong>{{ issue.message }}</strong></div>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% elif row.email_state.filter_state == "incomplete" %}
+                <p class="inline-error">{{ row.email_state.summary }}</p>
+              {% else %}
+                <p class="subtle-note">No current validation or alert issues.</p>
+              {% endif %}
+
+              <div class="fleet-action-stack">
+                {% if card.schedule_source == "jobs" %}
+                  <a href="/admin?edit={{ card.name }}&job={{ row.scheduler_job_name }}#schedule-modal" class="button button--secondary button--small">
+                    Edit Schedule
+                  </a>
+                {% else %}
+                  <a href="/admin?edit={{ card.name }}#schedule-modal" class="button button--secondary button--small">
+                    Edit Schedule
+                  </a>
+                {% endif %}
+                <a href="/admin/crawlers/{{ card.name }}" class="button button--secondary button--small">
+                  Settings &amp; Details
+                </a>
+              </div>
+            </section>
+          </div>
+        </div>
+      </details>
+    {% endfor %}
+  </section>
+
+  {% if scheduler_target %}
+    {% set card = scheduler_target.card %}
+    {% set scheduler_form = scheduler_target.scheduler_form %}
+    {% set scheduler_preview = scheduler_target.scheduler_preview %}
+    {% set scheduler_current_preview = scheduler_target.scheduler_current_preview %}
+    {% set scheduler_current_schedule = scheduler_target.scheduler_current_schedule %}
+    {% set scheduler_job = scheduler_target.scheduler_job %}
+    <div class="modal-shell is-open">
+      <button type="button" class="modal-backdrop js-close-modal" data-close-url="/admin" aria-label="Close schedule editor"></button>
+      <section class="modal-card" id="schedule-modal" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">Schedule Editor</p>
+            <h3 id="schedule-modal-title">
+              {{ card.name }}{% if scheduler_job %}: {{ scheduler_job.name }}{% endif %}
+            </h3>
+            <p class="subtle-note">Only the active mode is used. Hidden modes are ignored on save.</p>
+          </div>
+          <button type="button" class="button button--secondary button--small js-close-modal" data-close-url="/admin">Close</button>
+        </header>
+
+        <div class="modal-summary">
+          <div class="modal-summary__item">
+            <span class="metric-label">Current summary</span>
+            <strong>{{ scheduler_current_preview.summary }}</strong>
+          </div>
+          <div class="modal-summary__item">
+            <span class="metric-label">Current CRON</span>
+            <strong>{% if scheduler_current_schedule %}<code>{{ scheduler_current_schedule }}</code>{% else %}-{% endif %}</strong>
+          </div>
+          <div class="modal-summary__item">
+            <span class="metric-label">Source</span>
+            <strong>
+              {% if scheduler_job %}
+                job: {{ scheduler_job.name }}
+              {% else %}
+                {{ card.schedule_source or "not set" }}
+              {% endif %}
+            </strong>
+          </div>
+          <div class="modal-summary__item">
+            <span class="metric-label">Next run</span>
+            <strong>
+              {% if scheduler_preview.error %}
+                <span class="inline-error">{{ scheduler_preview.error }}</span>
+              {% elif scheduler_preview.next_runs %}
+                {{ scheduler_preview.next_runs[0] }} {{ state.time_label }}
+              {% else %}
+                -
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+
+        <form
+          method="post"
+          action="/admin/crawlers/{{ card.name }}/scheduler"
+          class="scheduler-form js-scheduler-form"
+          data-preview-id="scheduler-preview"
+          data-generated-id="scheduler-generated"
+          data-summary-id="scheduler-summary-text"
+        >
+          <input type="hidden" name="redirect_to" value="/admin" />
+          <input type="hidden" name="base_hash" value="{{ state.config_hash }}" />
+          <input type="hidden" name="schedule" value="{{ scheduler_form.schedule }}" class="js-schedule-output" />
+          {% if scheduler_job %}
+            <input type="hidden" name="job_name" value="{{ scheduler_job.name }}" />
+          {% endif %}
+
+          <section class="modal-section">
+            <div class="section-head">
+              <h4>General</h4>
+            </div>
+            <div class="modal-grid modal-grid--two">
+              {% if card.job_previews %}
+                <label class="field-block">
+                  <span class="field-label">Job</span>
+                  <select class="js-scheduler-job-picker">
+                    {% for job in card.job_previews %}
+                      <option
+                        value="{{ job.name }}"
+                        data-url="/admin?edit={{ card.name }}&job={{ job.name }}#schedule-modal"
+                        {% if scheduler_job and job.name == scheduler_job.name %}selected{% endif %}
+                      >
+                        {{ job.name }}{% if job.enabled is sameas false %} (disabled){% endif %}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+              {% endif %}
+              <label class="field-block">
+                <span class="field-label">{% if scheduler_job %}Job status{% else %}Status{% endif %}</span>
+                <select name="enable">
+                  <option value="true" {% if scheduler_form.enable == 'true' %}selected{% endif %}>Enabled</option>
+                  <option value="false" {% if scheduler_form.enable == 'false' %}selected{% endif %}>Disabled</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="modal-section">
+            <div class="section-head">
+              <h4>Repeat</h4>
+            </div>
+            <div class="mode-switch mode-switch--four" role="tablist" aria-label="Repeat mode">
+              <label class="mode-chip">
+                <input type="radio" name="scheduler_mode" value="hourly" class="js-scheduler-mode" {% if scheduler_form.scheduler_mode == 'hourly' %}checked{% endif %} />
+                <span>Hourly</span>
+              </label>
+              <label class="mode-chip">
+                <input type="radio" name="scheduler_mode" value="daily" class="js-scheduler-mode" {% if scheduler_form.scheduler_mode == 'daily' %}checked{% endif %} />
+                <span>Daily</span>
+              </label>
+              <label class="mode-chip">
+                <input type="radio" name="scheduler_mode" value="weekly" class="js-scheduler-mode" {% if scheduler_form.scheduler_mode == 'weekly' %}checked{% endif %} />
+                <span>Weekly</span>
+              </label>
+              <label class="mode-chip">
+                <input type="radio" name="scheduler_mode" value="advanced" class="js-scheduler-mode" {% if scheduler_form.scheduler_mode == 'advanced' %}checked{% endif %} />
+                <span>Advanced</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="mode-panel js-mode-panel" data-mode="hourly">
+            <div class="modal-grid modal-grid--three">
+              <label class="field-block">
+                <span class="field-label">Every</span>
+                <input type="number" name="hourly_interval_hours" min="1" max="23" value="{{ scheduler_form.hourly_interval_hours }}" class="js-mode-field" />
+              </label>
+              <div class="field-block field-block--static">
+                <span class="field-label">Unit</span>
+                <div class="static-value">hour{% if scheduler_form.hourly_interval_hours != '1' %}s{% endif %}</div>
+              </div>
+              <label class="field-block">
+                <span class="field-label">At minute</span>
+                <select name="hourly_minute" class="js-mode-field">
+                  {% for option in scheduler_minute_options %}
+                    <option value="{{ option.value }}" {% if scheduler_form.hourly_minute == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="mode-panel js-mode-panel" data-mode="daily">
+            <div class="modal-grid modal-grid--time">
+              <label class="field-block">
+                <span class="field-label">Hour</span>
+                <select name="daily_hour" class="js-mode-field">
+                  {% for option in scheduler_hour_options %}
+                    <option value="{{ option.value }}" {% if scheduler_form.daily_hour == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="field-block">
+                <span class="field-label">Minute</span>
+                <select name="daily_minute" class="js-mode-field">
+                  {% for option in scheduler_minute_options %}
+                    <option value="{{ option.value }}" {% if scheduler_form.daily_minute == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="mode-panel js-mode-panel" data-mode="weekly">
+            <div class="modal-grid">
+              <div class="field-block">
+                <span class="field-label">Weekdays</span>
+                <div class="weekday-picker">
+                  {% for option in scheduler_weekday_options %}
+                    <label class="weekday-chip">
+                      <input
+                        type="checkbox"
+                        name="weekly_days"
+                        value="{{ option.value }}"
+                        class="js-mode-field js-weekday-field"
+                        {% if option.value in scheduler_form.weekly_days %}checked{% endif %}
+                      />
+                      <span>{{ option.label[:3] }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="modal-grid modal-grid--time">
+                <label class="field-block">
+                  <span class="field-label">Hour</span>
+                  <select name="weekly_hour" class="js-mode-field">
+                    {% for option in scheduler_hour_options %}
+                      <option value="{{ option.value }}" {% if scheduler_form.weekly_hour == option.value %}selected{% endif %}>
+                        {{ option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label class="field-block">
+                  <span class="field-label">Minute</span>
+                  <select name="weekly_minute" class="js-mode-field">
+                    {% for option in scheduler_minute_options %}
+                      <option value="{{ option.value }}" {% if scheduler_form.weekly_minute == option.value %}selected{% endif %}>
+                        {{ option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="mode-panel js-mode-panel" data-mode="advanced">
+            <div class="field-block">
+              <span class="field-label">CRON expression</span>
+              <input type="text" name="advanced_schedule" value="{{ scheduler_form.advanced_schedule }}" class="js-mode-field js-advanced-schedule" />
+            </div>
+            <div class="sample-row">
+              {% for sample in state.schedule_samples[:4] %}
+                <button type="button" class="sample-chip js-scheduler-sample" data-schedule="{{ sample }}">
+                  {{ sample }}
+                </button>
+              {% endfor %}
+            </div>
+            {% if scheduler_form.scheduler_mode == 'advanced' %}
+              <p class="subtle-note">This schedule is currently in advanced mode because it does not fit the compact recurrence editor.</p>
+            {% endif %}
+          </section>
+
+          {% if not card.configured %}
+            <p class="subtle-note">
+              Saving creates a YAML section with <code>schema_name: "{{ card.name }}"</code>.
+            </p>
+          {% elif card.schedule_source == 'default' %}
+            <p class="subtle-note">Saving writes an explicit crawler-level schedule override.</p>
+          {% endif %}
+
+          <section class="preview-card preview-card--modal">
+            <div class="preview-card__header">
+              <div>
+                <span class="field-label">Rule summary</span>
+                <p class="preview-card__summary" id="scheduler-summary-text">{{ scheduler_preview.summary }}</p>
+                <p class="preview-card__cron"><code id="scheduler-generated">{{ scheduler_form.schedule }}</code></p>
+              </div>
+              <div class="modal-actions">
+                <button type="button" class="button button--secondary js-close-modal" data-close-url="/admin">Cancel</button>
+                <button type="submit" class="button button--primary">Save Schedule</button>
+              </div>
+            </div>
+
+            <div id="scheduler-preview" class="cron-preview">
+              {% if scheduler_preview.error %}
+                <p class="inline-error">{{ scheduler_preview.error }}</p>
+              {% else %}
+                <ul class="run-list">
+                  {% for run in scheduler_preview.next_runs %}
+                    <li>{{ run }} {{ state.time_label }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </div>
+          </section>
+
+          {% if scheduler_target.scheduler_errors %}
+            <ul class="issue-list issue-list--compact">
+              {% for error in scheduler_target.scheduler_errors %}
+                <li class="issue issue--error">
+                  <span class="issue-badge">Error</span>
+                  <div><strong>{{ error }}</strong></div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </form>
+      </section>
+    </div>
+  {% elif run_confirm_target %}
+    {% set card = run_confirm_target.card %}
+    {% set overview = run_confirm_target.overview %}
+    <div class="modal-shell is-open">
+      <button type="button" class="modal-backdrop js-close-modal" data-close-url="/admin" aria-label="Close run confirmation"></button>
+      <section class="modal-card modal-card--confirm" id="run-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="run-confirm-title">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">Run Confirmation</p>
+            <h3 id="run-confirm-title">{{ card.name }}</h3>
+            <p class="subtle-note">This starts a one-off manual run immediately. The scheduler and saved YAML stay unchanged.</p>
+          </div>
+          <button type="button" class="button button--secondary button--small js-close-modal" data-close-url="/admin">Close</button>
+        </header>
+
+        <div class="modal-summary">
+          <div class="modal-summary__item">
+            <span class="metric-label">Enabled</span>
+            <strong>
+              {% if card.enabled is sameas true %}
+                Enabled
+              {% elif card.enabled is sameas false %}
+                Disabled
+              {% else %}
+                Inherited / unknown
+              {% endif %}
+            </strong>
+          </div>
+          <div class="modal-summary__item">
+            <span class="metric-label">Current schedule</span>
+            <strong>{{ card.preview.summary }}</strong>
+          </div>
+          <div class="modal-summary__item">
+            <span class="metric-label">Next scheduled run</span>
+            <strong>
+              {% if card.preview.error %}
+                <span class="inline-error">{{ card.preview.error }}</span>
+              {% elif card.preview.next_runs %}
+                {{ card.preview.next_runs[0] }} {{ state.time_label }}
+              {% else %}
+                -
+              {% endif %}
+            </strong>
+          </div>
+          <div class="modal-summary__item">
+            <span class="metric-label">Post-run scripts</span>
+            <strong>
+              {% if run_confirm_target.post_run_script_count %}
+                {{ run_confirm_target.post_run_script_count }} configured
+              {% else %}
+                None
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+
+        {% if run_confirm_target.run_confirmation_errors %}
+          <ul class="issue-list issue-list--compact">
+            {% for error in run_confirm_target.run_confirmation_errors %}
+              <li class="issue issue--error">
+                <span class="issue-badge">Error</span>
+                <div><strong>{{ error }}</strong></div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        <section class="config-preview-grid">
+          <article class="config-preview-card">
+            <div>
+              <h4>Effective configuration</h4>
+              <p class="subtle-note">This merged configuration is used for the run.</p>
+            </div>
+            <pre class="config-preview"><code>{{ run_confirm_target.effective_config_yaml }}</code></pre>
+          </article>
+          <article class="config-preview-card">
+            <div>
+              <h4>Crawler YAML section</h4>
+              <p class="subtle-note">Crawler-specific values from <code>{{ state.config_path.name }}</code>.</p>
+            </div>
+            <pre class="config-preview"><code>{{ run_confirm_target.raw_config_yaml }}</code></pre>
+          </article>
+        </section>
+
+        <form method="post" action="/admin/crawlers/{{ card.name }}/actions/run_now" class="preview-card preview-card--modal">
+          <input type="hidden" name="redirect_to" value="/admin" />
+          <input type="hidden" name="response_context" value="dashboard-run-confirm" />
+
+          <div class="preview-card__header">
+            <div>
+              <span class="field-label">Execution</span>
+              <p class="preview-card__summary">Start {{ card.name }} now as a one-off manual run.</p>
+              <p class="preview-card__cron">The configured schedule remains in place for future runs.</p>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="button button--secondary js-close-modal" data-close-url="/admin">Cancel</button>
+              <button type="submit" class="button button--primary" {% if run_confirm_target.is_locked %}disabled{% endif %}>
+                Confirm and Run
+              </button>
+            </div>
+          </div>
+
+          {% if run_confirm_target.is_locked %}
+            <p class="subtle-note">Another run is already active for this crawler.</p>
+          {% endif %}
+        </form>
+      </section>
+    </div>
+  {% endif %}
+
+  <script>
+    const schedulerForm = document.querySelector(".js-scheduler-form");
+    const dashboardSampleButtons = document.querySelectorAll(".js-scheduler-sample");
+    const schedulerJobPicker = document.querySelector(".js-scheduler-job-picker");
+    const closeModalButtons = document.querySelectorAll(".js-close-modal");
+    const openModal = document.querySelector(".modal-shell.is-open");
+    const fleetRows = Array.from(document.querySelectorAll(".fleet-row"));
+    const fleetEmptyState = document.querySelector(".js-fleet-empty");
+    const fleetSearch = document.querySelector(".js-fleet-search");
+    const fleetFilterButtons = Array.from(document.querySelectorAll(".js-fleet-filter"));
+    const ACTIVE_RUN_STATUSES = new Set(["queued", "running"]);
+    let activeFleetFilter = "all";
+
+    function setModalScrollLock(enabled) {
+      document.documentElement.classList.toggle("has-modal", enabled);
+      document.body.classList.toggle("has-modal", enabled);
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function formatTimestamp(value) {
+      const normalized = String(value || "").replace("T", " ");
+      return normalized.length >= 16 ? normalized.slice(0, 16) : normalized;
+    }
+
+    function updateInspectUrl(crawlerName) {
+      const nextUrl = new URL(window.location.href);
+      if (crawlerName) {
+        nextUrl.searchParams.set("inspect", crawlerName);
+        nextUrl.hash = `crawler-${crawlerName}`;
+      } else {
+        nextUrl.searchParams.delete("inspect");
+        nextUrl.hash = "";
+      }
+      window.history.replaceState({}, "", nextUrl);
+    }
+
+    function syncFleetRowState(row) {
+      const isExpanded = row.hasAttribute("open");
+      const label = row.querySelector(".fleet-toggle__label");
+      row.classList.toggle("is-expanded", isExpanded);
+      if (label) {
+        label.textContent = isExpanded ? "Hide" : "Show";
+      }
+    }
+
+    function matchesFleetFilter(row, filterName) {
+      if (filterName === "enabled") {
+        return row.dataset.isEnabled === "true";
+      }
+      if (filterName === "disabled") {
+        return row.dataset.isDisabled === "true";
+      }
+      if (filterName === "running") {
+        return row.dataset.isRunning === "true";
+      }
+      if (filterName === "issues") {
+        return row.dataset.hasIssues === "true";
+      }
+      return true;
+    }
+
+    function applyFleetFilters() {
+      const searchTerm = (fleetSearch?.value || "").trim().toLowerCase();
+      let visibleRows = 0;
+
+      fleetRows.forEach((row) => {
+        const matchesSearch = !searchTerm || (row.dataset.filterText || "").includes(searchTerm);
+        const matchesFilter = matchesFleetFilter(row, activeFleetFilter);
+        const isVisible = matchesSearch && matchesFilter;
+        row.classList.toggle("is-hidden", !isVisible);
+        if (isVisible) {
+          visibleRows += 1;
+        }
+      });
+
+      if (fleetEmptyState) {
+        fleetEmptyState.classList.toggle("is-hidden", visibleRows !== 0);
+      }
+    }
+
+    function renderCompletedRunState(card, payload) {
+      const runState = card.querySelector(".js-run-state");
+      const lockPill = card.querySelector(".js-lock-pill");
+      const activityState = card.querySelector(".js-activity-state");
+      const activityNote = card.querySelector(".js-activity-note");
+
+      if (lockPill) {
+        lockPill.remove();
+      }
+
+      if (runState) {
+        runState.innerHTML = `
+          <span class="fleet-summary__label">Run</span>
+          <span class="status-pill status-pill--${escapeHtml(payload.status)}">${escapeHtml(payload.status)}</span>
+          <span class="subtle-note">${escapeHtml(payload.action_label)} at ${escapeHtml(formatTimestamp(payload.created_at))}</span>
+        `;
+      }
+
+      if (activityState) {
+        activityState.textContent = payload.status;
+        activityState.className = `status-pill status-pill--${payload.status} js-activity-state`;
+      }
+
+      if (activityNote) {
+        activityNote.textContent = `${payload.action_label} at ${formatTimestamp(payload.created_at)}`;
+      }
+
+      card.dataset.isRunning = "false";
+      card.removeAttribute("data-active-run-id");
+      applyFleetFilters();
+    }
+
+    async function pollDashboardRuns() {
+      const activeRunCards = Array.from(document.querySelectorAll("[data-active-run-id]"));
+      if (!activeRunCards.length) {
+        return;
+      }
+
+      await Promise.all(
+        activeRunCards.map(async (card) => {
+          const runId = card.dataset.activeRunId;
+          if (!runId) {
+            return;
+          }
+
+          try {
+            const response = await fetch(`/admin/api/runs/${encodeURIComponent(runId)}`, {
+              headers: { Accept: "application/json" },
+            });
+            if (!response.ok) {
+              return;
+            }
+
+            const payload = await response.json();
+            if (!ACTIVE_RUN_STATUSES.has(payload.status)) {
+              renderCompletedRunState(card, payload);
+            }
+          } catch (_error) {
+          }
+        }),
+      );
+
+      if (document.querySelector("[data-active-run-id]")) {
+        window.setTimeout(pollDashboardRuns, 2000);
+      }
+    }
+
+    function getSchedulerMode(form) {
+      return form.querySelector('.js-scheduler-mode:checked')?.value || "daily";
+    }
+
+    function buildGuidedCron(form) {
+      const mode = getSchedulerMode(form);
+
+      if (mode === "hourly") {
+        const interval = form.querySelector('[name="hourly_interval_hours"]')?.value?.trim() || "1";
+        const minute = form.querySelector('[name="hourly_minute"]')?.value || "0";
+        return interval === "1" ? `${minute} * * * *` : `${minute} */${interval} * * *`;
+      }
+
+      if (mode === "daily") {
+        const hour = form.querySelector('[name="daily_hour"]')?.value || "0";
+        const minute = form.querySelector('[name="daily_minute"]')?.value || "0";
+        return `${minute} ${hour} * * *`;
+      }
+
+      if (mode === "weekly") {
+        const hour = form.querySelector('[name="weekly_hour"]')?.value || "0";
+        const minute = form.querySelector('[name="weekly_minute"]')?.value || "0";
+        const days = Array.from(form.querySelectorAll('[name="weekly_days"]:checked'))
+          .map((field) => field.value)
+          .join(",");
+        return days ? `${minute} ${hour} * * ${days}` : "";
+      }
+
+      return "";
+    }
+
+    function syncSchedulerMode(form) {
+      const mode = getSchedulerMode(form);
+
+      form.querySelectorAll(".js-mode-panel").forEach((panel) => {
+        const isActive = panel.dataset.mode === mode;
+        panel.classList.toggle("is-hidden", !isActive);
+        panel.querySelectorAll("input, select").forEach((field) => {
+          field.disabled = !isActive;
+        });
+      });
+    }
+
+    function resolveSchedulerSchedule(form) {
+      if (getSchedulerMode(form) === "advanced") {
+        return form.querySelector(".js-advanced-schedule")?.value?.trim() || "";
+      }
+      return buildGuidedCron(form).trim();
+    }
+
+    async function updateDashboardCronPreview(form) {
+      const previewElement = document.getElementById(form.dataset.previewId);
+      const outputField = form.querySelector(".js-schedule-output");
+      const generatedTarget = document.getElementById(form.dataset.generatedId);
+      const summaryTarget = document.getElementById(form.dataset.summaryId);
+      const schedule = resolveSchedulerSchedule(form);
+
+      outputField.value = schedule;
+      if (generatedTarget) {
+        generatedTarget.textContent = schedule || "-";
+      }
+
+      if (!previewElement) {
+        return;
+      }
+
+      if (!schedule) {
+        if (summaryTarget) {
+          summaryTarget.textContent = "Schedule is incomplete.";
+        }
+        previewElement.innerHTML = '<p class="inline-error">Schedule is required.</p>';
+        return;
+      }
+
+      previewElement.innerHTML = '<p class="empty-state">Loading preview...</p>';
+
+      const response = await fetch(`/admin/api/cron-preview?schedule=${encodeURIComponent(schedule)}`);
+      const payload = await response.json();
+
+      if (payload.error) {
+        if (summaryTarget) {
+          summaryTarget.textContent = "Invalid schedule";
+        }
+        previewElement.innerHTML = `<p class="inline-error">${payload.error}</p>`;
+        return;
+      }
+
+      if (summaryTarget) {
+        summaryTarget.textContent = payload.summary;
+      }
+
+      const runs = payload.next_runs
+        .map((run) => `<li>${run} ${payload.time_label}</li>`)
+        .join("");
+
+      previewElement.innerHTML = `<ul class="run-list">${runs}</ul>`;
+    }
+
+    function schedulePreviewUpdate(form) {
+      window.clearTimeout(form.__cronPreviewTimer);
+      form.__cronPreviewTimer = window.setTimeout(() => updateDashboardCronPreview(form), 180);
+    }
+
+    if (schedulerForm) {
+      syncSchedulerMode(schedulerForm);
+      updateDashboardCronPreview(schedulerForm);
+
+      schedulerForm.querySelectorAll(".js-scheduler-mode").forEach((field) => {
+        field.addEventListener("change", () => {
+          syncSchedulerMode(schedulerForm);
+          schedulePreviewUpdate(schedulerForm);
+        });
+      });
+
+      schedulerForm.querySelectorAll(".js-mode-field").forEach((field) => {
+        const eventName = field.type === "checkbox" || field.tagName === "SELECT" ? "change" : "input";
+        field.addEventListener(eventName, () => {
+          schedulePreviewUpdate(schedulerForm);
+        });
+      });
+
+      schedulerForm.addEventListener("submit", () => {
+        schedulerForm.querySelector(".js-schedule-output").value = resolveSchedulerSchedule(schedulerForm);
+      });
+    }
+
+    if (schedulerJobPicker) {
+      schedulerJobPicker.addEventListener("change", () => {
+        const selectedOption = schedulerJobPicker.selectedOptions[0];
+        if (selectedOption?.dataset.url) {
+          window.location.href = selectedOption.dataset.url;
+        }
+      });
+    }
+
+    dashboardSampleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!schedulerForm) {
+          return;
+        }
+
+        const targetInput = schedulerForm.querySelector(".js-advanced-schedule");
+        if (!targetInput) {
+          return;
+        }
+
+        targetInput.value = button.dataset.schedule;
+        const advancedMode = schedulerForm.querySelector('.js-scheduler-mode[value="advanced"]');
+        if (advancedMode) {
+          advancedMode.checked = true;
+        }
+        syncSchedulerMode(schedulerForm);
+        schedulePreviewUpdate(schedulerForm);
+      });
+    });
+
+    fleetFilterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFleetFilter = button.dataset.filter || "all";
+        fleetFilterButtons.forEach((candidate) => {
+          candidate.classList.toggle("is-active", candidate === button);
+        });
+        applyFleetFilters();
+      });
+    });
+
+    if (fleetSearch) {
+      fleetSearch.addEventListener("input", applyFleetFilters);
+    }
+
+    document.querySelectorAll(".js-summary-action").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+    });
+
+    fleetRows.forEach((row) => {
+      syncFleetRowState(row);
+      row.addEventListener("toggle", () => {
+        const crawlerName = row.dataset.crawlerName || "";
+        if (row.open) {
+          fleetRows.forEach((otherRow) => {
+            if (otherRow !== row && otherRow.open) {
+              otherRow.removeAttribute("open");
+              syncFleetRowState(otherRow);
+            }
+          });
+          updateInspectUrl(crawlerName);
+        } else if (!fleetRows.some((candidate) => candidate.open)) {
+          updateInspectUrl("");
+        }
+        syncFleetRowState(row);
+      });
+    });
+
+    if (openModal) {
+      setModalScrollLock(true);
+    }
+
+    closeModalButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const closeUrl = button.dataset.closeUrl || "/admin";
+        setModalScrollLock(false);
+        window.location.assign(closeUrl);
+      });
+    });
+
+    applyFleetFilters();
+    pollDashboardRuns();
+  </script>
+{% endblock %}
