@@ -13,7 +13,6 @@ from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from oeds_dispatch_layers.api import router as dispatch_layers_router
 
 from crawler_admin.config_service import (
     build_cron_preview,
@@ -78,7 +77,6 @@ SCHEDULER_DEFAULT_FORM = {
 }
 
 app = FastAPI(title="OEDS Crawler Control", version="0.5.0")
-app.include_router(dispatch_layers_router)
 app.mount("/admin/static", StaticFiles(directory=str(BASE_DIR / "static")), name="admin_static")
 
 
