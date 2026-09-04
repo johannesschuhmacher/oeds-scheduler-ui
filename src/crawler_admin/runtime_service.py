@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -1200,8 +1201,9 @@ class CrawlerRunService:
 
     def _run_gapfill_backfill(self, payload: dict[str, Any]) -> str | None:
         command = [
-            sys.executable,
-            "scripts/gapfill_timeseries.py",
+            "oeds-post",
+            "gapfill",
+            "entsoe-fms",
             "--job",
             str(payload["job"]),
             "--start",
@@ -1238,8 +1240,9 @@ class CrawlerRunService:
 
     def _run_price_forecast(self, payload: dict[str, Any]) -> str | None:
         command = [
-            sys.executable,
-            "scripts/run_price_forecast.py",
+            "oeds-post",
+            "forecast",
+            "day-ahead-price",
             "--train-days",
             str(payload["train_days"]),
             "--backtest-days",
@@ -1283,9 +1286,20 @@ class CrawlerRunService:
 
         print(f"[POST] Executing {len(scripts)} post-run script(s).")
         for script in scripts:
-            print(f"[POST] python {script}")
+            command = str(script)
+            try:
+                from oeds_post_scripts.commands import script_to_post_command
+
+                command = script_to_post_command(command) or command
+            except ImportError:
+                pass
+
+            argv = shlex.split(command)
+            if argv and argv[0].endswith(".py"):
+                argv.insert(0, sys.executable)
+            print(f"[POST] {command}")
             completed = subprocess.run(
-                [sys.executable, script],
+                argv,
                 cwd=self.repo_root,
                 stdout=handle,
                 stderr=subprocess.STDOUT,
@@ -1294,7 +1308,7 @@ class CrawlerRunService:
             )
             if completed.returncode != 0:
                 raise RuntimeError(
-                    f"Post-run script '{script}' exited with code {completed.returncode}."
+                    f"Post-run command '{command}' exited with code {completed.returncode}."
                 )
 
     def _build_crawler_instance(

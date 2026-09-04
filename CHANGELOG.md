@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0
+
+- Discover installed crawler modules without requiring crawler sources at the
+  workspace root.
+- Run admin post-processing actions through the stable `oeds-post` CLI.
+
 ## 0.0.0-local
 
 - Initial local split repository for registry-based scheduler runtime.

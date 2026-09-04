@@ -2,6 +2,10 @@
 
 Scheduler and crawler admin UI module for the modular OEDS stack.
 
+The runtime expects `oeds-crawler-pack` and `oeds-post-scripts` to be installed
+alongside this package. The deployment repository installs all three modules
+and supplies the crawler inventory and runtime configuration.
+
 This repository is part of the modular OEDS stack. The shared crawler and
 database core remains in
 [open-energy-data-server](https://github.com/open-energy-data-server/open-energy-data-server),

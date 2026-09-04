@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
+import pkgutil
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -18,7 +19,7 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 CONFIG_FILENAME = "CRAWLER_CONFIG.yml"
-EXCLUDED_CRAWLER_MODULES = {"__init__"}
+EXCLUDED_CRAWLER_MODULES = {"__init__", "common", "data"}
 GAPFILL_POSTRUN_SCRIPT = "scripts/gapfill_timeseries.py"
 WINDOWS_TIMEZONE_ABBREVIATIONS = {
     "W. Europe Standard Time": "CET",
@@ -174,13 +175,24 @@ def get_file_mtime_display(path: Path) -> str:
 def discover_crawler_modules(repo_root: Path | None = None) -> list[str]:
     root = repo_root or get_repo_root()
     crawler_dir = root / "crawler"
-    modules = []
+    modules: set[str] = set()
 
     for file_path in crawler_dir.glob("*.py"):
         module_name = file_path.stem
         if module_name.startswith("__") or module_name in EXCLUDED_CRAWLER_MODULES:
             continue
-        modules.append(module_name)
+        modules.add(module_name)
+
+    try:
+        import crawler as crawler_package
+    except ImportError:
+        pass
+    else:
+        modules.update(
+            module.name
+            for module in pkgutil.iter_modules(crawler_package.__path__)
+            if not module.ispkg and module.name not in EXCLUDED_CRAWLER_MODULES
+        )
 
     return sorted(modules)
 
