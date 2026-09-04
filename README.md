@@ -49,6 +49,12 @@ scheduler-ui -> crawler registry -> crawler implementation
 The scheduler does not need to import `crawler.<name>` directly during planning.
 Crawler import/construction happens only when a planned job is dispatched.
 
+The merged static inventory currently exposes 47 crawler names. Forty-six have
+a supported constructor interface. The unregistered upstream legacy `dwd`
+module remains visible for analysis but is not dispatched because it requires
+an additional `nuts_matrix` argument. The modular runtime uses the separate
+`dwd_cdc` crawler from `oeds-crawler-pack`.
+
 ## Current CLIs
 
 The package entry point now loads the modular application:
@@ -123,4 +129,5 @@ python .\modular_repos\tools\verify_split_parity.py
 
 - deeper admin-service integration with the registry-based scheduler runtime
 - threaded production dispatch if needed
-- packaging decision for the shared `crawler_core`/`crawler.common` facade
+- upstream contribution of generic crawler-contract improvements currently
+  provided by the `oeds-crawler-pack` compatibility facade
