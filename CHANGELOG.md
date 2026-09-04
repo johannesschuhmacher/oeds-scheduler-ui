@@ -5,6 +5,8 @@
 - Discover installed crawler modules without requiring crawler sources at the
   workspace root.
 - Run admin post-processing actions through the stable `oeds-post` CLI.
+- Reject crawler constructors with unsupported additional required parameters
+  while continuing to allow optional constructor extensions.
 
 ## 0.0.0-local
 

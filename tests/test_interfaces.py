@@ -15,6 +15,7 @@ from oeds_scheduler_ui.factory import (
     CONSTRUCTOR_CRAWLER_NAME_CONFIG,
     CONSTRUCTOR_SCHEMA_NAME_CONFIG,
     CONSTRUCTOR_SCHEMA_NAME_ONLY,
+    CONSTRUCTOR_UNKNOWN,
     CrawlerFactory,
 )
 from oeds_scheduler_ui.planner import (
@@ -261,6 +262,63 @@ def test_crawler_factory_supports_schema_name_only_legacy_constructor(tmp_path):
     assert audit.constructor_style == CONSTRUCTOR_SCHEMA_NAME_ONLY
     assert audit.has_supported_constructor is True
     assert plan.args == ("eex_prices",)
+
+
+def test_crawler_factory_rejects_additional_required_constructor_parameter(tmp_path):
+    core_package = tmp_path / "oeds" / "crawler"
+    core_package.mkdir(parents=True)
+    (tmp_path / "oeds" / "__init__.py").write_text("", encoding="utf-8")
+    (core_package / "__init__.py").write_text("", encoding="utf-8")
+    (core_package / "dwd.py").write_text(
+        "class DWDCrawler:\n"
+        "    def __init__(self, schema_name, config, nuts_matrix):\n"
+        "        pass\n"
+        "    def crawl_temporal(self):\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+    registry = registry_from_spec_strings(
+        "oeds-core",
+        {"dwd": "oeds.crawler.dwd:DWDCrawler"},
+        source_path=tmp_path,
+    )
+    factory = CrawlerFactory(merge_crawler_registries([registry]))
+
+    audit = factory.audit("dwd")
+
+    assert audit.init_parameters == ("schema_name", "config", "nuts_matrix")
+    assert audit.required_init_parameters == (
+        "schema_name",
+        "config",
+        "nuts_matrix",
+    )
+    assert audit.constructor_style == CONSTRUCTOR_UNKNOWN
+    assert audit.has_supported_constructor is False
+
+
+def test_crawler_factory_allows_optional_constructor_extension(tmp_path):
+    crawler_package = tmp_path / "crawler"
+    crawler_package.mkdir()
+    (crawler_package / "__init__.py").write_text("", encoding="utf-8")
+    (crawler_package / "sample.py").write_text(
+        "class SampleCrawler:\n"
+        "    def __init__(self, crawler_name, config, batch_size=100):\n"
+        "        pass\n"
+        "    def run(self):\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+    registry = registry_from_spec_strings(
+        "oeds-crawler-pack",
+        {"sample": "crawler.sample:SampleCrawler"},
+        source_path=tmp_path,
+    )
+    factory = CrawlerFactory(merge_crawler_registries([registry]))
+
+    audit = factory.audit("sample")
+
+    assert audit.required_init_parameters == ("crawler_name", "config")
+    assert audit.constructor_style == CONSTRUCTOR_CRAWLER_NAME_CONFIG
 
 
 def test_discover_crawler_specs_finds_class_based_crawlers(tmp_path):

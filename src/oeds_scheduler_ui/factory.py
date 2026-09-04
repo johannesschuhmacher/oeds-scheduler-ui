@@ -32,6 +32,7 @@ class ConstructorAudit:
     bases: tuple[str, ...]
     methods: tuple[str, ...]
     init_parameters: tuple[str, ...]
+    required_init_parameters: tuple[str, ...]
     constructor_style: str
     import_required_for_details: bool = False
     error: str | None = None
@@ -95,17 +96,34 @@ def _base_name(base: ast.expr) -> str:
     return ast.unparse(base)
 
 
-def _function_parameters(function: ast.FunctionDef) -> tuple[str, ...]:
-    return tuple(arg.arg for arg in function.args.args if arg.arg != "self")
+def _function_parameters(
+    function: ast.FunctionDef,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    positional = [*function.args.posonlyargs, *function.args.args]
+    positional = [arg for arg in positional if arg.arg != "self"]
+    required_count = max(0, len(positional) - len(function.args.defaults))
+    required = [arg.arg for arg in positional[:required_count]]
+
+    keyword_only = [arg.arg for arg in function.args.kwonlyargs]
+    required.extend(
+        name
+        for name, default in zip(keyword_only, function.args.kw_defaults)
+        if default is None
+    )
+    return (
+        tuple(arg.arg for arg in positional) + tuple(keyword_only),
+        tuple(required),
+    )
 
 
-def _callable_parameters(function: Any) -> tuple[str, ...]:
+def _callable_parameters(function: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
     try:
         signature = inspect.signature(function)
     except (TypeError, ValueError):
-        return ()
+        return (), ()
 
     parameters: list[str] = []
+    required: list[str] = []
     for parameter in signature.parameters.values():
         if parameter.name == "self":
             continue
@@ -115,7 +133,9 @@ def _callable_parameters(function: Any) -> tuple[str, ...]:
             inspect.Parameter.KEYWORD_ONLY,
         }:
             parameters.append(parameter.name)
-    return tuple(parameters)
+            if parameter.default is inspect.Parameter.empty:
+                required.append(parameter.name)
+    return tuple(parameters), tuple(required)
 
 
 def _find_class(tree: ast.AST, class_name: str) -> ast.ClassDef | None:
@@ -129,12 +149,20 @@ def _infer_constructor_style(
     spec: CrawlerSpec,
     bases: tuple[str, ...],
     init_parameters: tuple[str, ...],
+    required_init_parameters: tuple[str, ...],
 ) -> str:
-    if init_parameters[:2] == ("crawler_name", "config"):
+    required = set(required_init_parameters)
+    if init_parameters[:2] == ("crawler_name", "config") and required <= {
+        "crawler_name",
+        "config",
+    }:
         return CONSTRUCTOR_CRAWLER_NAME_CONFIG
-    if init_parameters[:2] == ("schema_name", "config"):
+    if init_parameters[:2] == ("schema_name", "config") and required <= {
+        "schema_name",
+        "config",
+    }:
         return CONSTRUCTOR_SCHEMA_NAME_CONFIG
-    if init_parameters == ("schema_name",):
+    if init_parameters[:1] == ("schema_name",) and required <= {"schema_name"}:
         return CONSTRUCTOR_SCHEMA_NAME_ONLY
 
     if init_parameters:
@@ -164,6 +192,7 @@ def audit_crawler_spec(crawler_name: str, target: CrawlerSpec) -> ConstructorAud
             bases=(),
             methods=(),
             init_parameters=(),
+            required_init_parameters=(),
             constructor_style=CONSTRUCTOR_UNKNOWN,
             import_required_for_details=True,
             error="module source file could not be resolved",
@@ -180,6 +209,7 @@ def audit_crawler_spec(crawler_name: str, target: CrawlerSpec) -> ConstructorAud
             bases=(),
             methods=(),
             init_parameters=(),
+            required_init_parameters=(),
             constructor_style=CONSTRUCTOR_UNKNOWN,
             error=str(exc),
         )
@@ -194,6 +224,7 @@ def audit_crawler_spec(crawler_name: str, target: CrawlerSpec) -> ConstructorAud
             bases=(),
             methods=(),
             init_parameters=(),
+            required_init_parameters=(),
             constructor_style=CONSTRUCTOR_UNKNOWN,
             error=f"class {target.attribute!r} was not found",
         )
@@ -210,8 +241,16 @@ def audit_crawler_spec(crawler_name: str, target: CrawlerSpec) -> ConstructorAud
         ),
         None,
     )
-    init_parameters = _function_parameters(init_node) if init_node else ()
-    constructor_style = _infer_constructor_style(target, bases, init_parameters)
+    if init_node:
+        init_parameters, required_init_parameters = _function_parameters(init_node)
+    else:
+        init_parameters, required_init_parameters = (), ()
+    constructor_style = _infer_constructor_style(
+        target,
+        bases,
+        init_parameters,
+        required_init_parameters,
+    )
 
     return ConstructorAudit(
         crawler_name=crawler_name,
@@ -221,6 +260,7 @@ def audit_crawler_spec(crawler_name: str, target: CrawlerSpec) -> ConstructorAud
         bases=bases,
         methods=methods,
         init_parameters=init_parameters,
+        required_init_parameters=required_init_parameters,
         constructor_style=constructor_style,
     )
 
@@ -247,7 +287,9 @@ class CrawlerFactory:
 
         bases = tuple(base.__name__ for base in target.__bases__)
         methods = tuple(name for name in dir(target) if not name.startswith("_"))
-        init_parameters = _callable_parameters(target.__init__)
+        init_parameters, required_init_parameters = _callable_parameters(
+            target.__init__
+        )
         constructor_style = _infer_constructor_style(
             CrawlerSpec(
                 source_name="loaded-class",
@@ -256,6 +298,7 @@ class CrawlerFactory:
             ),
             bases,
             init_parameters,
+            required_init_parameters,
         )
         return ConstructorAudit(
             crawler_name=crawler_name,
@@ -269,6 +312,7 @@ class CrawlerFactory:
             bases=bases,
             methods=methods,
             init_parameters=init_parameters,
+            required_init_parameters=required_init_parameters,
             constructor_style=constructor_style,
             import_required_for_details=True,
         )
