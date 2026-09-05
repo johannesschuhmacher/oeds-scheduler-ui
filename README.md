@@ -52,8 +52,9 @@ Crawler import/construction happens only when a planned job is dispatched.
 The merged static inventory currently exposes 47 crawler names. Forty-six have
 a supported constructor interface. The unregistered upstream legacy `dwd`
 module remains visible for analysis but is not dispatched because it requires
-an additional `nuts_matrix` argument. The modular runtime uses the separate
-`dwd_cdc` crawler from `oeds-crawler-pack`.
+an additional `nuts_matrix` argument. `dwd_cdc` is a separate crawler, not a
+verified equivalent of that legacy workflow. `eex` also has no dispatchable
+run method. Constructor discovery alone does not demonstrate source availability.
 
 ## Current CLIs
 
@@ -87,10 +88,11 @@ preserving the current UI behavior.
 
 ## Local Development
 
-Run the repository-level verifier:
+Install the package and run the focused tests from this repository:
 
 ```powershell
-python .\modular_repos\tools\verify_modules.py
+uv sync
+uv run --with pytest pytest tests/test_interfaces.py
 ```
 
 This checks:
@@ -118,12 +120,10 @@ checked by contract tests:
 - same crawler constructor support for KIT and upstream OEDS crawler styles
 - no crawler import during planning
 
-The extracted admin UI is currently checked byte-for-byte against the current
-KIT source by:
-
-```powershell
-python .\modular_repos\tools\verify_split_parity.py
-```
+The admin UI has received subsequent fixes and is no longer byte-for-byte
+identical to KIT. Test behavior, not source-file identity. Full admin tests
+require the crawler and post-scripts modules; run them in the assembled
+runtime described in the deployment repository's `docs/testing.md`.
 
 ## Future Work
 
